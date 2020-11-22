@@ -5,21 +5,7 @@ import { OrbitControls } from './three.js-dev/examples/jsm/controls/OrbitControl
 
 import { VRButton } from './three.js-dev/examples/jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from './three.js-dev/examples/jsm/webxr/XRControllerModelFactory.js';
-/*Create Web XR application, using
 
-•More than one mesh object and material, assets loader can be used. V
-
-•Using grouping and cloning VV
-
-•One or more animations, light objects and shaders VVV
-
-•Input controls optional, except grips
-
-•Theme of your choice V
-
-
-
-Please submit till next lecture 26.11.2020*/
 
 export function project() {
 
@@ -32,28 +18,146 @@ export function project() {
         1000
     );
     var user = new THREE.Group();
-    user.position.set( 0, 0, 0 );
-    scene.add( user );
-    user.add( camera );
+    user.position.set(0, 0, 0);
+    scene.add(user);
+    user.add(camera);
     const loader = new THREE.TextureLoader();
     let renderer = new THREE.WebGLRenderer();
     let textureLoader = new THREE.TextureLoader();
- 
+
     renderer.xr.enabled = true;
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
 
-    const ControllerModelFactory = new XRControllerModelFactory();
+    let container;
 
-    const grip1 = renderer.xr.getControllerGrip(0);
-    const model1 = ControllerModelFactory.createControllerModel(grip1);
-    scene.add(grip1);
-  
-    const grip2 = renderer.xr.getControllerGrip(1);
-    const model2 = ControllerModelFactory.createControllerModel(grip2);
-    scene.add(grip2);
-  
-    var controls = new OrbitControls(camera, renderer.domElement);
+    let controller1, controller2;
+    let controllerGrip1, controllerGrip2;
+
+    let raycaster;
+
+    const intersected = [];
+    const tempMatrix = new THREE.Matrix4();
+
+    let controls, group;
+    controller1 = renderer.xr.getController(0);
+    controller1.addEventListener('selectstart', onSelectStart);
+    controller1.addEventListener('selectend', onSelectEnd);
+    scene.add(controller1);
+
+    controller2 = renderer.xr.getController(1);
+    controller2.addEventListener('selectstart', onSelectStart);
+    controller2.addEventListener('selectend', onSelectEnd);
+    scene.add(controller2);
+
+    const controllerModelFactory = new XRControllerModelFactory();
+
+    controllerGrip1 = renderer.xr.getControllerGrip(0);
+    controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+    scene.add(controllerGrip1);
+
+    controllerGrip2 = renderer.xr.getControllerGrip(1);
+    controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+    scene.add(controllerGrip2);
+
+    const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, - 1)]);
+
+    const line = new THREE.Line(geometry);
+    line.name = 'line';
+    line.scale.z = 5;
+
+    controller1.add(line.clone());
+    controller2.add(line.clone());
+
+    raycaster = new THREE.Raycaster();
+
+    function onSelectStart(event) {
+
+        const controller = event.target;
+
+        const intersections = getIntersections(controller);
+
+        if (intersections.length > 0) {
+
+            const intersection = intersections[0];
+
+            const object = intersection.object;
+            object.material.emissive.b = 1;
+            controller.attach(object);
+
+            controller.userData.selected = object;
+
+        }
+
+    }
+
+    function onSelectEnd(event) {
+
+        const controller = event.target;
+
+        if (controller.userData.selected !== undefined) {
+
+            const object = controller.userData.selected;
+            object.material.emissive.b = 0;
+            group.attach(object);
+
+            controller.userData.selected = undefined;
+
+        }
+
+
+    }
+
+    function getIntersections(controller) {
+
+        tempMatrix.identity().extractRotation(controller.matrixWorld);
+
+        raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+        raycaster.ray.direction.set(0, 0, - 1).applyMatrix4(tempMatrix);
+
+        return raycaster.intersectObjects(group.children);
+
+    }
+
+    function intersectObjects(controller) {
+
+        // Do not highlight when already selected
+
+        if (controller.userData.selected !== undefined) return;
+
+        const line = controller.getObjectByName('line');
+        const intersections = getIntersections(controller);
+
+        if (intersections.length > 0) {
+
+            const intersection = intersections[0];
+
+            const object = intersection.object;
+            object.material.emissive.r = 1;
+            intersected.push(object);
+            console.log('ir');
+            line.scale.z = intersection.distance;
+
+        } else {
+
+            line.scale.z = 5;
+
+        }
+
+    }
+
+    function cleanIntersected() {
+
+        while (intersected.length) {
+
+            const object = intersected.pop();
+            object.material.emissive.r = 0;
+
+        }
+
+    }
+
+    var orbitcontrols = new OrbitControls(camera, renderer.domElement);
     var moonPivot;
     let uniform = {
         time: { value: 1 },
@@ -63,8 +167,10 @@ export function project() {
 
     let mesh_arr = [];
     let mesh_arr_shade = [];
-    camera.position.z = 100;
-
+    camera.position.z = 10;
+    group = new THREE.Group();
+    create_boxes();
+    scene.add(group);
     //templis
     create_obj('./Pagoda.mtl', './Pagoda.obj', 0, -0.5, -35, 1);
     //koki
@@ -105,9 +211,13 @@ export function project() {
 
 
         })
+        cleanIntersected();
+
+        intersectObjects(controller1);
+        intersectObjects(controller2);
         renderer.render(scene, camera);
     });
-  
+
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(VRButton.createButton(renderer));
     document.body.appendChild(renderer.domElement);
@@ -140,6 +250,7 @@ export function project() {
                         var zloc = Math.floor(Math.random() * (1 + 40 - (-31)) + (-31));
                         cloned.position.set(xloc, y, zloc);
                         mesh_arr.push(cloned)
+
                         scene.add(cloned);
 
                     }
@@ -182,6 +293,7 @@ export function project() {
         moonPivot = new THREE.Group();
         plane.add(moonPivot);
         moonPivot.add(moon);
+
         scene.add(plane);
     }
 
@@ -250,6 +362,37 @@ export function project() {
         }
     }
 
+    function create_boxes() {
+        const geometry = new THREE.BoxGeometry(3, 3, 3);
+        const material = new THREE.MeshStandardMaterial({
+            map: loader.load('./box.jpg', function (texture) {
+
+
+            }),
+
+
+
+        });
+        const box = new THREE.Mesh(geometry, material);
+        let cc = -60;
+        let bb = 10;
+        let mesh;
+        for (let this_y = -10; this_y < 0; this_y++) {
+            mesh = box.clone();
+
+            mesh.position.set(bb, 1, cc);
+            if (bb == 10) {
+                bb = -5;
+            }
+            else {
+                bb = 10;
+            }
+            cc += 20;
+
+            group.add(mesh);
+        }
+
+    }
 
 }
 
